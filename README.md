@@ -2,7 +2,7 @@
 
 https://xavier-miles.shinyapps.io/covid-19_data/
 
-Main purpose was to re-create a Covid-19 in NZ histogram I saw, but using R/ggplot2 rather than Tableau. Also wanted to learn how to make dashboards in R.
+Main purpose was to re-create a histogram I saw displaying Covid-19 NZ data, but using R/ggplot2 rather than Tableau. Also wanted to learn how to make dashboards in R.
 Was originally done in mid-2020. Currently uses a very old version of the Covid-19 data, as I had not added the functionality for it to automatically import the data itself.
 
 "app.R" contains ALL of the logic for running the dashboard (this should be separated into modules at some point). 

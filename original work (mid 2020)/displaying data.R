@@ -1,10 +1,10 @@
-setwd("C:/users/mrome/Desktop/covid-19 data")
+setwd("C:/users/mrome/Documents/R projects/covid-19 data")
 
 library("tidyverse")
 library("readxl")
 library("plotly")
 
-latestFigures = "covid-19-case-list-17-april-2020.xlsx"
+latestFigures = "data/covid-19-case-list-17-april-2020.xlsx"
 # is it possible to search for latest file?
 
 confCases = read_excel(latestFigures, sheet="Confirmed", range="A4:I9999")

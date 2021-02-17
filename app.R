@@ -1,3 +1,7 @@
+
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
 library(shinydashboard)
 library(tidyverse)
 library(readxl)
@@ -15,40 +19,32 @@ library(readxl)
 
 
 ### Importing and tidying the data ###
-latestNZData = "data/covid-19-case-list-17-april-2020.xlsx"
-# is it possible to search for latest file?
+# need to search folder for latest non-empty cases CSV
+nz_filenames <- list.files("./data", 
+                           pattern = "nz_covid_cases_\\d{4}-\\d{2}-\\d{2}.csv") %>%
+  sort(decreasing = TRUE)
 
-# Import data (ignoring first 3 rows as are irrelevant):
-confCases = read_excel(latestNZData, sheet = "Confirmed", skip = 3)
-probCases = read_excel(latestNZData, sheet = "Probable", skip = 3)
+for (filename in nz_filenames) {
+  raw_nz_cases <- read_csv(paste("./data/", filename, sep = ""),
+                           col_types = cols())
+  
+  if (nrow(raw_nz_cases) != 0 & ncol(raw_nz_cases) != 0) {
+    message(paste("Loading cases from:", filename))
+    break
+  }
+  else if (filename == nz_filenames[length(nz_filenames)]) {
+    stop("No non-empty NZ covid cases file")
+  }
+}
 
-# Changing column names:
-newColNames = c("Date", "Sex", "Age", "DHB", "OverseasTravel", 
-                "PreviousCountry", "FlightNumber", "DepartDate", "ArrivalDate")
-colnames(confCases) = newColNames
-colnames(probCases) = newColNames
+ages_order = c("0 to 9", "10 to 19", "20 to 29", "30 to 39", "40 to 49", 
+               "50 to 59", "60 to 69", "70 to 79", "80 to 89", "90+")
 
-# Changing some columns to 'Date' data type:
-confCases = confCases %>% 
-  mutate(Date = as.Date(Date, format = "%d/%m/%Y"),
-         DepartDate = as.Date(DepartDate),
-         ArrivalDate = as.Date(ArrivalDate))
-probCases = probCases %>% 
-  mutate(Date = as.Date(Date, format = "%d/%m/%Y"),
-         DepartDate = as.Date(DepartDate),
-         ArrivalDate = as.Date(ArrivalDate))
+nz_cases <- raw_nz_cases %>%
+  rename_with(~ tolower(gsub(" ", "_", .x, fixed = TRUE))) %>%
+  mutate(report_date = as.Date(report_date, "%Y-%m-%d"),
+         age_group = factor(age_group, levels = ages_order))
 
-# Combine Confirmed and Probable cases into one object:
-confCases$Status = rep("Confirmed", nrow(confCases))
-probCases$Status = rep("Probable", nrow(probCases))
-cases = rbind(confCases, probCases)
-
-# Dictate: the order of stacking in the plots
-cases$Status = factor(cases$Status, levels = c("Probable", "Confirmed"))
-# d
-agesOrder = c("<1", "1 to 4", "5 to 9", "10 to 14", "15 to 19", "20 to 29",
-              "30 to 39", "40 to 49", "50 to 59", "60 to 69", "70+")
-cases$Age = factor(cases$Age, levels=agesOrder)
 
 
 
@@ -57,7 +53,7 @@ ui = dashboardPage(
   
   ## Header content
   dashboardHeader(
-    title = "Welcome everybody"
+    title = "Welcome"
   ),
   
   
@@ -69,8 +65,8 @@ ui = dashboardPage(
         "Global", icon = icon("dashboard"), tabName = "global"
       ),
       menuItem(
-        "New Zealand", icon = icon("kiwi-bird"), startExpanded = T,
-        menuSubItem("Total", tabName = "totalCasesTab", selected = T),
+        "New Zealand", icon = icon("kiwi-bird"), startExpanded = TRUE,
+        menuSubItem("DHB Stratified", tabName = "DHBStratifiedTab", selected = TRUE),
         menuSubItem("Age Stratified", tabName = "ageStratifiedTab")
       )
     )
@@ -80,35 +76,33 @@ ui = dashboardPage(
   ## Body content
   dashboardBody(
     tabItems(
-      tabItem("totalCasesTab",
+      tabItem("DHBStratifiedTab",
         fluidRow(
           box(
             status = "info", 
             width = 9,
-            title="Total Cases (Confirmed & Probable) - All Ages",
-            plotOutput("totalCasesPlot")
+            title="Cases by DHB",
+            plotOutput("DHBStratifiedPlot")
           ),
           
           box(
             width = 2,
-            actionButton("selectAllBtnTotal", "Select All"),
-            actionButton("unselectAllBtnTotal", "Unselect All"),
+            actionButton("selectAllBtnDHB", "Select All"),
+            actionButton("unselectAllBtnDHB", "Unselect All"),
             checkboxGroupInput("selectedDHBs", "Select DHB(s):",
-              choices = unique(cases$DHB),
-              selected = unique(cases$DHB)
+                               choices = unique(nz_cases$dhb),
+                               selected = unique(nz_cases$dhb)
             )
           )
         ),
         
         box(
-          sliderInput("selectedDatesTotal", "Select Date Range:",
-                      min = as.Date("2020-02-26"), 
-                      max = as.Date("2020-04-17"),
-                      value = c(as.Date("2020-02-26"), 
-                                as.Date("2020-04-17")))
+          sliderInput("selectedDatesDHB", "Select Date Range:",
+                      min = min(nz_cases$report_date), 
+                      max = max(nz_cases$report_date),
+                      value = as.Date(c("2020-02-26", "2020-05-20")))
         )
       ),
-      
       
       tabItem("ageStratifiedTab",
         box(
@@ -117,19 +111,18 @@ ui = dashboardPage(
           plotOutput("ageStratifiedPlot")
         ),
         box(
-          width=2,
+          width = 2,
           actionButton("selectAllBtnAge", "Select All"),
           actionButton("unselectAllBtnAge", "Unselect All"),
           checkboxGroupInput("selectedAges", "Select Age(s):",
-                             choices = agesOrder,
-                             selected = agesOrder)
+                             choices = ages_order,
+                             selected = ages_order)
         ),
         box(
           sliderInput("selectedDatesAge", "Select Date Range:",
-                      min = as.Date("2020-02-26"), 
-                      max = as.Date("2020-04-17"),
-                      value=c(as.Date("2020-02-26"), 
-                              as.Date("2020-04-17")))
+                      min = min(nz_cases$report_date), 
+                      max = max(nz_cases$report_date),
+                      value = as.Date(c("2020-02-26", "2020-05-20")))
         )
       )
     )
@@ -141,88 +134,83 @@ ui = dashboardPage(
 ### Define server ###
 server = function(input, output, session) {
   
-  ## Total Cases Tab
-  output$totalCasesPlot = renderPlot({
-    if (length(input$selectedDHBs) != 0) {
-      ggplot(cases %>%
-               #subset based on DHB checkboxes and Date slider
-               subset((DHB %in% input$selectedDHBs) & 
-                        (Date %in% seq(input$selectedDatesTotal[1], input$selectedDatesTotal[2], by="days"))) %>%
-               #group by Date and Status, then count frequency for each
-               count(Date, Status),
-             
-             aes(Date, n, fill = Status)) +
-        geom_bar(stat = "identity") +
-        geom_text(aes(label=n), position=position_stack(vjust=0.5), colour="white") +
-        coord_cartesian(xlim = c(input$selectedDatesTotal[1], input$selectedDatesTotal[2]),
-                        ylim = c(0, 85)) +
-        labs(y = "Cases", caption = "Source: Ministry of Health website")
+  ## DHB Stratified Tab
+  output$DHBStratifiedPlot = renderPlot({
+    if (length(input$selectedDHBs) > 0) {
+      nz_cases_subset <- nz_cases %>%
+        subset(dhb %in% input$selectedDHBs) %>%
+        count(report_date, dhb)
+      alpha <- 1
     } else { # Display transparent image/representation of bar plot
-      ggplot(cases %>%
-               #subset based on Date slider
-               subset(Date %in% seq(input$selectedDatesTotal[1], input$selectedDatesTotal[2], by="days")) %>%
-               #group by Date and Status, then count frequency for each
-               count(Date, Status),
-             
-             aes(Date, n, fill=Status)) +
-        geom_bar(stat = "identity", alpha = 0.1) +
-        coord_cartesian(xlim = c(input$selectedDatesTotal[1], input$selectedDatesTotal[2]), 
-                        ylim = c(0 ,85)) +
-        labs(y = "Cases", caption = "Source: Ministry of Health website")
+      nz_cases_subset <- nz_cases %>%
+        count(report_date, dhb)
+      alpha <- 0.3
     }
+    
+    g <- ggplot(nz_cases_subset, 
+                aes(report_date, n, fill = dhb)) +
+      geom_bar(stat = "identity", alpha = alpha) +
+      coord_cartesian(xlim = input$selectedDatesDHB,
+                      ylim = c(0, 85)) +
+      labs(x = "Report date", y = "Cases", fill = "DHBs",
+           caption = "Source: Ministry of Health website")
+    
+    if (length(input$selectedDHBs) > 0) {
+      g <- g + geom_text(aes(label = n), colour="white",
+                         position = position_stack(vjust = 0.5))
+    }
+    
+    return(g)
   })
   
   # Updates checkboxes if 'Select All' or 'Unselect All' button are pressed
-  observeEvent(input$selectAllBtnTotal, {
+  observeEvent(input$selectAllBtnDHB, {
     updateCheckboxGroupInput(
       session = session, inputId = "selectedDHBs",
-      selected = unique(cases$DHB)
+      selected = unique(nz_cases$dhb)
     )
   })
-  observeEvent(input$unselectAllBtnTotal, {
+  observeEvent(input$unselectAllBtnDHB, {
     updateCheckboxGroupInput(
       session, "selectedDHBs",
       selected = ""
     )
   })
   
-  
   ## Age Stratified Tab
   output$ageStratifiedPlot = renderPlot({
-    if (length(input$selectedAges) != 0) { # If there are any Ages selected
-      ggplot(cases %>% 
-               #subselect based on Age checkboxes and Date slider
-               subset((Age %in% input$selectedAges) & 
-                        (Date %in% seq(input$selectedDatesAge[1], input$selectedDatesAge[2], by="days"))) %>%
-               #group by Date and Age, then count frequency for each
-               count(Date, Age),
-             
-             aes(Date, n, fill = Age)) +
-        geom_bar(stat="identity") +
-        geom_text(aes(label=n), position=position_stack(vjust=0.5), colour="white") +
-        coord_cartesian(xlim = c(input$selectedDatesAge[1], input$selectedDatesAge[2]),
-                        ylim = c(0, 85)) +
-        labs(y = "Cases", caption = "Source: Ministry of Health website")
+    if (length(input$selectedAges) > 0) {
+      nz_cases_subset <- nz_cases %>% 
+        subset(age_group %in% input$selectedAges) %>%
+        count(report_date, age_group)
+      alpha <- 1
     } else {
-      ggplot(cases %>%
-               #subselect based on Date slider
-               subset(Date %in% seq(input$selectedDatesAge[1], input$selectedDatesAge[2], by="days")) %>%
-               #group by Date and Age, then count frequency for each
-               count(Date, Age),
-             
-             aes(Date, n, fill = Age)) +
-        geom_bar(stat = "identity", alpha = 0.1) +
-        coord_cartesian(xlim = c(input$selectedDatesAge[1], input$selectedDatesAge[2]), 
-                        ylim = c(0, 85)) +
-        labs(y = "Cases", caption = "Source: Ministry of Health website")
+      nz_cases_subset <- nz_cases %>%
+        count(report_date, age_group)
+      alpha <- 0.3
     }
+    
+    g <- ggplot(nz_cases_subset,
+                aes(report_date, n, fill = age_group)) +
+      geom_bar(stat = "identity", alpha = alpha) +
+      coord_cartesian(xlim = input$selectedDatesAge,
+                      ylim = c(0, 85)) +
+      labs(x = "Report date", y = "Cases", fill = "Age groups",
+           caption = "Source: Ministry of Health website")
+    
+    if (length(input$selectedAges) > 0) {
+      g <- g + geom_text(aes(label = n), colour = "white",
+                         position = position_stack(vjust = 0.5))
+    }
+    
+    return(g)
   })
   
   # Updates checkboxes if 'Select All' or 'Unselect All' button are pressed
   observeEvent(input$selectAllBtnAge, {
     updateCheckboxGroupInput(
       session = session, inputId = "selectedAges",
-      selected = unique(cases$Age)
+      selected = unique(nz_cases$age_group)
     )
   })
   observeEvent(input$unselectAllBtnAge, {

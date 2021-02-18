@@ -4,6 +4,7 @@
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 library(tidyverse)
+library(magrittr)  # for two-way pipe
 
 
 datasets <- c(
@@ -11,84 +12,65 @@ datasets <- c(
   "recovered_global",
   "deaths_global"
 )
-
 base_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_"
 
 df_longs = vector(mode = "list")
-
 for (dataset in datasets) {
-  source_url <- paste(base_url, dataset, ".csv", sep = "")
+  source_url <- paste0(base_url, dataset, ".csv")
   df <- read_csv(source_url, col_types = cols())
   
   df_long <- df %>%
-    pivot_longer(-(1:4), names_to = "Date", values_to = "count")
+    pivot_longer(-(1:4), names_to = "Date", values_to = "count") %>%
+    mutate (Date = as.Date(Date, "%m/%d/%y"))
   
   if (dataset == "recovered_global") {
-    df_long <- df_long %>%
-      filter(`Country/Region` == "Canada") %>%
+    df_long %>% filter(`Country/Region` == "Canada") %<>%  # NOTE two-way pipe
       mutate(`Province/State` = "All")
   }
-  else {
-    # Add count=NA entries for Country/Region=Canada, Province/State=All
-    NA_rows <- df_long %>%
-      filter(`Country/Region` == "Canada" & 
-               `Province/State` == unique) %>%
-      mutate(`Province/State` = "All", count = NA)
-    
-    print(NA_rows)
-    
-    df_long <- df_long %>%
-      add_row(NA_rows)
-  }
   
-  df_longs[[dataset]] = df_long
+  df_longs[[dataset]] <- df_long
 }
 
+#' Recovered data is counted for Canada as a whole, whereas Confirmed & Death 
+#' data are counted for each Canadian province. So create count=NA rows for 
+#' Confirmed & Deaths dataframes where {Country/Region=Canada, 
+#' Province/State=All} before merging.
+NA_rows <- df_longs[["confirmed_global"]] %>%
+  filter(`Country/Region` == "Canada" & `Province/State` == "Alberta") %>%
+  select(-count) %>%
+  mutate(`Province/State` = "All", Lat = 	56.1304, Long = -106.3468, 
+         Confirmed = NA, Deaths = NA)
+
+# Merge three dataframes
+global <- left_join(df_longs[["confirmed_global"]], df_longs[["deaths_global"]],
+                    by = c("Province/State", "Country/Region", "Lat", "Long", 
+                           "Date")) %>%
+  rename(Confirmed = count.x, Deaths = count.y) %>%
+  add_row(NA_rows) %>%
+  left_join(., df_longs[["recovered_global"]],
+            by = c("Province/State", "Country/Region", "Lat", "Long", "Date")) %>%
+  rename(Recovered = count)
+
+# Aggregate data into Country/Region-wise (collapsing Province/Region), and 
+# remove Lat & Long. Also removes ship information.
 ship_names <- c("Grand Princess", "Diamond Princess", "MS Zaandam")
-
-global <- Reduce(
-  function(...) left_join(..., 
-                          by=c("Province/State", "Country/Region", "Lat", 
-                               "Long", "Date"), 
-                          all.x=TRUE), 
-  df_longs
-) %>%
-  rename(Confirmed = count.x, Recovered = count.y, Deaths = count) %>%
-  mutate(Date = as.Date(Date, format = "%m/%d/%y")) %>%
-  # filter(!(`Province/State` %in% ship_names | 
-  #            `Country/Region` %in% ship_names)) %>% # remove ship data
-  mutate(Active = Confirmed - Recovered - Deaths)
-  
 global_country <- global %>%
+  filter(!(`Province/State` %in% ship_names | 
+             `Country/Region` %in% ship_names)) %>%
   group_by(`Country/Region`, Date) %>%
-  summarise_at(c("Confirmed", "Deaths", "Recovered", "Active"), ~sum(.))
-
-# Replace NA (in any column except Date) with 0
-# full_table <- full_table %>% mutate_at(setdiff(names(full_table), "Date"), ~replace(., is.na(.), 0))
-
-## Data Aggregation --------------------------------------------------------------------------------
-
-# Aggregate data into Country/Region-wise (collapsing Province/Region), and remove Lat & Long
-full_grouped <- full_table %>%
-  group_by(Date, `Country/Region`) %>%
-  summarise_at(c("Confirmed", "Deaths", "Recovered", "Active"), ~sum(.))
+  summarise_at(c("Confirmed", "Deaths", "Recovered"), ~sum(., na.rm = TRUE))
 
 # Use 'cumulative' columns to get 'daily new' columns
-full_grouped <- full_grouped %>%
+global_country <- global_country %>%
   group_by(`Country/Region`) %>%
-  mutate(
-    NewConfirmed = Confirmed - lag(Confirmed),
-    NewDeaths = Deaths - lag(Deaths),
-    NewRecovered = Recovered - lag(Recovered)
-  )
-full_grouped = full_grouped %>% 
-  mutate_at(c("NewConfirmed", "NewDeaths", "NewRecovered"), ~replace(., is.na(.), 0))
-# replaces all NA entry (in first date) with 0
+  mutate(New_Confirmed = Confirmed - lag(Confirmed),
+         New_Deaths = Deaths - lag(Deaths),
+         New_Recovered = Recovered - lag(Recovered)) %>% 
+  mutate_at(c("New_Confirmed", "New_Deaths", "New_Recovered"), 
+            ~replace(., is.na(.), 0))
 
-write.csv(full_grouped, "COVID-19-time-series-clean-complete.csv")
-
-
-
-
-
-
+# Write to file
+latest_date <- max(global_country$Date)
+out_csv_filepath <- paste0("data/JHU_global_cases_", latest_date, ".csv")
+write.csv(global_country, out_csv_filepath)
+message(paste0("Writing JHU global cases to: ", out_csv_filepath))

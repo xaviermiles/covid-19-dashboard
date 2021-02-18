@@ -1,6 +1,5 @@
-# 12 Feb 2021
-# Should scrape latest case information from Ministry of Health website, then
-# tidy this data into suitable format for dashboard
+#' Scrape latest NZ case information from Ministry of Health website, then tidy 
+#' the data into suitable format for dashboard and write to CSV.
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 

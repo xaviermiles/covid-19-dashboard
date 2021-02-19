@@ -72,5 +72,5 @@ global_country <- global_country %>%
 # Write to file
 latest_date <- max(global_country$Date)
 out_csv_filepath <- paste0("data/JHU_global_cases_", latest_date, ".csv")
-write.csv(global_country, out_csv_filepath)
+write_csv(global_country, out_csv_filepath)
 message(paste0("Writing JHU global cases to: ", out_csv_filepath))

@@ -21,11 +21,13 @@ for (dataset in datasets) {
   
   df_long <- df %>%
     pivot_longer(-(1:4), names_to = "Date", values_to = "count") %>%
-    mutate (Date = as.Date(Date, "%m/%d/%y"))
+    mutate(Date = as.Date(Date, "%m/%d/%y")) %>%
+    rename(Country = `Country/Region`, State = `Province/State`)
   
   if (dataset == "recovered_global") {
-    df_long %>% filter(`Country/Region` == "Canada") %<>%  # NOTE two-way pipe
-      mutate(`Province/State` = "All")
+    # df_long %>% filter(Country == "Canada") %<>%  # NOTE two-way pipe
+    #   mutate(State = "All")
+    (df_long %>% filter(Country == "Canada")) <- mutate(State = "All")
   }
   
   df_longs[[dataset]] <- df_long
@@ -33,41 +35,38 @@ for (dataset in datasets) {
 
 #' Recovered data is counted for Canada as a whole, whereas Confirmed & Death 
 #' data are counted for each Canadian province. So create count=NA rows for 
-#' Confirmed & Deaths dataframes where {Country/Region=Canada, 
-#' Province/State=All} before merging.
+#' Confirmed & Deaths dataframes where {Country=Canada, State=All} before 
+#' merging.
 NA_rows <- df_longs[["confirmed_global"]] %>%
-  filter(`Country/Region` == "Canada" & `Province/State` == "Alberta") %>%
+  filter(Country == "Canada" & State == "Alberta") %>%
   select(-count) %>%
-  mutate(`Province/State` = "All", Lat = 	56.1304, Long = -106.3468, 
+  mutate(State = "All", Lat = 	56.1304, Long = -106.3468, 
          Confirmed = NA, Deaths = NA)
 
 # Merge three dataframes
 global <- left_join(df_longs[["confirmed_global"]], df_longs[["deaths_global"]],
-                    by = c("Province/State", "Country/Region", "Lat", "Long", 
+                    by = c("State", "Country", "Lat", "Long", 
                            "Date")) %>%
   rename(Confirmed = count.x, Deaths = count.y) %>%
   add_row(NA_rows) %>%
   left_join(., df_longs[["recovered_global"]],
-            by = c("Province/State", "Country/Region", "Lat", "Long", "Date")) %>%
+            by = c("Province", "Country", "Lat", "Long", "Date")) %>%
   rename(Recovered = count)
 
 # Aggregate data into Country/Region-wise (collapsing Province/Region), and 
 # remove Lat & Long. Also removes ship information.
 ship_names <- c("Grand Princess", "Diamond Princess", "MS Zaandam")
 global_country <- global %>%
-  filter(!(`Province/State` %in% ship_names | 
-             `Country/Region` %in% ship_names)) %>%
-  group_by(`Country/Region`, Date) %>%
+  filter(!(Province %in% ship_names | Country %in% ship_names)) %>%
+  group_by(Country, Date) %>%
   summarise_at(c("Confirmed", "Deaths", "Recovered"), ~sum(., na.rm = TRUE))
 
 # Use 'cumulative' columns to get 'daily new' columns
 global_country <- global_country %>%
-  group_by(`Country/Region`) %>%
-  mutate(New_Confirmed = Confirmed - lag(Confirmed),
-         New_Deaths = Deaths - lag(Deaths),
-         New_Recovered = Recovered - lag(Recovered)) %>% 
-  mutate_at(c("New_Confirmed", "New_Deaths", "New_Recovered"), 
-            ~replace(., is.na(.), 0))
+  group_by(Country) %>%
+  mutate(Daily_Confirmed = c(0, diff(Confirmed)),
+         Daily_Deaths = c(0, diff(Deaths)),
+         Daily_Recovered = c(0, diff(Recovered)))
 
 # Write to file
 latest_date <- max(global_country$Date)

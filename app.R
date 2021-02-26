@@ -151,53 +151,54 @@ ui = dashboardPage(
       
       tabItem(
         "DHBStratifiedTab",
-        box(
-          status = "info", 
-          width = 9,
-          title = "Cases by DHB",
-          plotOutput("DHBStratifiedPlot")
+        column(width = 9,
+          box(
+            width = 12, height = 500, status = "info",
+            title = "Cases by DHB",
+            plotOutput("DHBStratifiedPlot")
+          ),
+          box(
+            width = 6, status = "info",
+            sliderInput("selectedDatesDHB", "Select Date Range:",
+                        min = min(nz_cases$report_date), 
+                        max = max(nz_cases$report_date),
+                        value = as.Date(c("2020-02-26", "2020-05-20")))
+          )
         ),
-        
+
         box(
-          width = 2,
+          width = 3,
           actionButton("selectAllBtnDHB", "Select All"),
           actionButton("unselectAllBtnDHB", "Unselect All"),
           checkboxGroupInput("selectedDHBs", "Select DHB(s):",
                              choices = unique(nz_cases$dhb),
                              selected = unique(nz_cases$dhb))
-        ),
-        
-        box(
-          sliderInput("selectedDatesDHB", "Select Date Range:",
-                      min = min(nz_cases$report_date), 
-                      max = max(nz_cases$report_date),
-                      value = as.Date(c("2020-02-26", "2020-05-20")))
         )
       ),
       
       tabItem(
         "ageStratifiedTab",
-        fluidRow(
+        column(width = 9,
           box(
-            width = 9, status = "info",
+            width = 12, height = 500, status = "info",
             title = "Cases by Age",
             plotOutput("ageStratifiedPlot")
           ),
           box(
-            width = 2,
-            actionButton("selectAllBtnAge", "Select All"),
-            actionButton("unselectAllBtnAge", "Unselect All"),
-            checkboxGroupInput("selectedAges", "Select Age(s):",
-                               choices = ages_order,
-                               selected = ages_order)
+            width = 6, status = "info",
+            sliderInput("selectedDatesAge", "Select Date Range:",
+                        min = min(nz_cases$report_date),
+                        max = max(nz_cases$report_date),
+                        value = as.Date(c("2020-02-26", "2020-05-20")))
           )
         ),
-        
         box(
-          sliderInput("selectedDatesAge", "Select Date Range:",
-                      min = min(nz_cases$report_date), 
-                      max = max(nz_cases$report_date),
-                      value = as.Date(c("2020-02-26", "2020-05-20")))
+          width = 3,
+          actionButton("selectAllBtnAge", "Select All"),
+          actionButton("unselectAllBtnAge", "Unselect All"),
+          checkboxGroupInput("selectedAges", "Select Age Group(s):",
+                             choices = ages_order,
+                             selected = ages_order)
         )
       )
     )
@@ -440,7 +441,7 @@ server = function(input, output, session) {
                                            scaling_factor$text)) +
       scale_y_continuous(labels = function(x) {x / scaling_factor$num}) +
       custom_theme
-  })
+  }, height = 420)
   
   # NZ: DHB Stratified Tab -----------------------------------------------------
   output$DHBStratifiedPlot <- renderPlot({
@@ -460,8 +461,9 @@ server = function(input, output, session) {
       geom_bar(stat = "identity", alpha = alpha) +
       coord_cartesian(xlim = input$selectedDatesDHB,
                       ylim = c(0, 85)) +
-      labs(x = "Report date", y = "Cases", fill = "DHBs",
-           caption = "Source: Ministry of Health website")
+      labs(x = "Report Date", y = "Cases", fill = "DHB(s)",
+           caption = "Source: Ministry of Health Website") + 
+      guides(fill = guide_legend(ncol = 1))
     
     if (length(input$selectedDHBs) > 0) {
       g <- g + geom_text(aes(label = n), colour="white",
@@ -469,7 +471,7 @@ server = function(input, output, session) {
     }
     
     return(g)
-  })
+  }, height = 420)
   
   # Updates checkboxes if 'Select All' or 'Unselect All' button are pressed
   observeEvent(input$selectAllBtnDHB, {
@@ -503,7 +505,7 @@ server = function(input, output, session) {
       geom_bar(stat = "identity", alpha = alpha) +
       coord_cartesian(xlim = input$selectedDatesAge,
                       ylim = c(0, 85)) +
-      labs(x = "Report date", y = "Cases", fill = "Age groups",
+      labs(x = "Report Date", y = "Cases", fill = "Age Group(s)",
            caption = "Source: Ministry of Health website")
     
     if (length(input$selectedAges) > 0) {

@@ -27,7 +27,7 @@ custom_theme <- theme(
   axis.ticks = element_blank(),
   panel.background = element_blank(),
   legend.key = element_blank(),
-  legend.position = "none",
+  legend.position = "left",
   plot.title = element_text(hjust = 0.5)
 )
 
@@ -67,8 +67,12 @@ jhu_filenames <- list.files("./data",
 
 global_cases <- read_csv("data/JHU_global_cases_2021-02-17.csv",
                          col_types = cols()) %>%
-  mutate(`Country/Region` = factor(`Country/Region`))
+  mutate(Country = factor(Country), Date = as.Date(Date, "%d/%m/%Y")) %>%
+  mutate(Infection_Rate = Deaths / Confirmed,
+         Daily_Infection_Rate = Daily_Deaths / Daily_Confirmed)
 
+global_cases <- global_cases %>%
+  mutate(Infection_Rate = if_else(is.infinite(Infection_Rate), 1, Infection_Rate))
 
 
 ### Define UI ###
@@ -97,8 +101,6 @@ ui = dashboardPage(
     )
   ),
   
-  
-  ## Body content
   dashboardBody(
     tabItems(
       tabItem(
@@ -108,7 +110,7 @@ ui = dashboardPage(
           tabPanel(
             title = "Main dashboard",
             value = "page1",
-            fluidRow(class = "summaryRow",
+            fluidRow(
               valueBoxOutput("total_confirmed"),
               valueBoxOutput("total_deaths"),
               column(sliderInput("num_top_countries", "Number of Countries:",
@@ -117,17 +119,18 @@ ui = dashboardPage(
               column(uiOutput("open_panel_btn_spot"),
                      width = 2)
             ),
-            fluidRow(class = "summaryRow",
-              valueBoxOutput("new_confirmed", width = 2),
+            fluidRow(
+              valueBoxOutput("daily_confirmed", width = 2),
               valueBoxOutput("rolling_average_confirmed", width = 2),
-              valueBoxOutput("new_deaths", width = 2),
+              valueBoxOutput("daily_deaths", width = 2),
               valueBoxOutput("rolling_average_deaths", width = 2),
               column(selectInput("lineplot_mode", "Lineplot Mode:",
                                  choices = c("Daily", "Cumulative"),
                                  selected = "Cumulative"),
                      width = 2),
-              column(selectInput("global_mode", "Mode:",
-                                 choices = c("Confirmed", "Deaths")),
+              column(selectInput("global_indicator", "Indicator:", 
+                                 choices = c("Confirmed", "Deaths", 
+                                             "Infection Rate")),
                      width = 2)
             ),
             fluidRow(),
@@ -211,28 +214,39 @@ server = function(input, output, session) {
   panel_list <- NULL
   
   reac <- reactiveValues(toHighlight = rep(FALSE, 10),
-                         selectedBar = NULL)
+                         selectedBar = NULL,
+                         selectedColor = NULL)
   
+  # a bar is clicked
   observeEvent(input$top_countries_plot_click, {
+    indicator <- gsub(" ", "_", input$global_indicator)
+    
     top_countries <- global_cases %>%
       filter(Date == max(global_cases$Date)) %>%
-      slice_max(order_by = .data[[input$global_mode]], 
+      slice_max(order_by = .data[[indicator]], 
                 n = input$num_top_countries)
     
     new_selected_bar <- top_countries %>%
-      .$`Country/Region` %>%
-      reorder(top_countries[[input$global_mode]]) %>%
+      .$Country %>%
+      reorder(top_countries[[indicator]]) %>%
       .[round(input$top_countries_plot_click$x)]
     
     if (!is.null(reac$selectedBar) && reac$selectedBar == new_selected_bar) {
       # deselect bar
       reac$selectedBar <- NULL
       reac$toHighlight <- rep(FALSE, input$num_top_countries)
+      reac$selectedColor <- NULL
+      
       output$open_panel_btn_spot <- renderUI(NULL)
     } else {
       # select new bar
       reac$selectedBar <- new_selected_bar
-      reac$toHighlight <- top_countries$`Country/Region` %in% reac$selectedBar
+      reac$toHighlight <- top_countries$Country %in% reac$selectedBar
+      print(top_countries)
+      print(new_selected_bar)
+      print(reac$toHighlight)
+      reac$selectedColor <- scales::hue_pal()(input$num_top_countries)[which(reac$toHighlight)]
+      
       output$open_panel_btn_spot <- renderUI(
         actionButton("open_panel_btn", "View more details")
       )
@@ -274,16 +288,20 @@ server = function(input, output, session) {
     }
   })
   
-  # change the scaling of the plots according the selected mode
+  # Global: Scaling of Axis Labels ---------------------------------------------
   scaling_factor <- reactiveValues(num = 1e6, text = "millions")
   
-  observeEvent(input$global_mode, {
-    if (input$global_mode == "Confirmed") {
+  observeEvent(input$global_indicator, {
+    
+    if (input$global_indicator == "Confirmed") {
       scaling_factor$num <- 1e6
-      scaling_factor$text <- "millions"
-    } else if (input$global_mode == "Deaths") {
+      scaling_factor$text <- " (millions)"
+    } else if (input$global_indicator == "Deaths") {
       scaling_factor$num <- 1e3
-      scaling_factor$text <- "thousands"
+      scaling_factor$text <- " (thousands)"
+    } else if (input$global_indicator == "Infection Rate") {
+      scaling_factor$num <- 1
+      scaling_factor$text <- ""
     } else {
       warning("Mode does not have scaling factor for plots.")
     }
@@ -310,11 +328,11 @@ server = function(input, output, session) {
       valueBox(subtitle = "Total Deaths")
   })
   
-  ## Global: Sub-summary Boxes -------------------------------------------------
-  output$new_confirmed <- renderValueBox({
+  ## Global: Sub-Summary Boxes -------------------------------------------------
+  output$daily_confirmed <- renderValueBox({
     global_cases %>%
       filter(Date == max(unique(global_cases$Date))) %>%
-      .$New_Confirmed %>%
+      .$Daily_Confirmed %>%
       sum() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
@@ -327,7 +345,7 @@ server = function(input, output, session) {
     
     global_cases %>%
       filter(Date %in% rolling_dates) %>%
-      .$New_Confirmed %>%
+      .$Daily_Confirmed %>%
       sum() %>%
       divide_by(7) %>%
       round() %>%
@@ -336,10 +354,10 @@ server = function(input, output, session) {
       valueBox(subtitle = "7-day Average Confirmed")
   })
   
-  output$new_deaths <- renderValueBox({
+  output$daily_deaths <- renderValueBox({
     global_cases %>%
       filter(Date == max(unique(global_cases$Date))) %>%
-      .$New_Deaths %>%
+      .$Daily_Deaths %>%
       sum() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
@@ -352,7 +370,7 @@ server = function(input, output, session) {
     
     global_cases %>%
       filter(Date %in% rolling_dates) %>%
-      .$New_Deaths %>%
+      .$Daily_Deaths %>%
       sum() %>%
       divide_by(7) %>%
       round() %>%
@@ -363,46 +381,60 @@ server = function(input, output, session) {
   
   # Global: Plots --------------------------------------------------------------
   output$global_plot = renderPlot({
+    indicator <- gsub(" ", "_", input$global_indicator)
+    
     top_countries <- global_cases %>%
       filter(Date == max(global_cases$Date)) %>%
-      slice_max(order_by = .data[[input$global_mode]], n = input$num_top_countries) %>%
-      .$`Country/Region`
+      slice_max(order_by = .data[[indicator]], 
+                n = input$num_top_countries) %>%
+      .$Country
 
     global_subset <- global_cases %>%
-      filter(`Country/Region` %in% top_countries)
+      filter(Country %in% top_countries) %>%
+      na.omit()
     
     if (input$lineplot_mode == "Daily") {
-      full_mode <- paste0("New_", input$global_mode)
+      y_var_name <- paste0("Daily_", indicator)
     } else {
-      full_mode <- input$global_mode
+      y_var_name <- indicator
     }
-    print(as.name(full_mode))
     
-    ggplot(global_subset, aes(Date, .data[[full_mode]], 
-                              group = `Country/Region`)) +
-      geom_line(aes(color = `Country/Region`), size = 1) +
-      labs(x = "", y = "", title = paste0("Cumulative ", input$global_mode, 
-                                          " (", scaling_factor$text, ")")) +
+    suppressWarnings(suppressMessages(
+    ggplot(global_subset, aes(Date, .data[[y_var_name]], group = Country)) +
+      geom_line(color = reac$selectedColor, size = 2.5) +
+      labs(x = "", y = "", title = paste0("Cumulative ", input$global_indicator, 
+                                          scaling_factor$text)) +
       scale_x_date(date_labels = "%b-%y", breaks = "1 month") +
       scale_y_continuous(labels = function(x) {x / scaling_factor$num}) +
+      gghighlight::gghighlight(Country == reac$selectedBar,
+                               unhighlighted_params = list(size = 2),
+                               keep_scales = TRUE) +
       custom_theme
+    ))
   })
   
   output$top_countries_plot = renderPlot({
+    indicator <- gsub(" ", "_", input$global_indicator)
+    
     top_countries_total <- global_cases %>%
       filter(Date == max(global_cases$Date)) %>%
-      slice_max(order_by = .data[[input$global_mode]], 
+      slice_max(order_by = .data[[indicator]], 
                 n = input$num_top_countries)
     
+    y_var_name <- indicator
+    
     ggplot(top_countries_total, 
-           aes(x = reorder(`Country/Region`, -.data[[input$global_mode]]), 
-               y = .data[[input$global_mode]],
-               fill = ifelse(reac$toHighlight, "yes", "no"))) +
-      geom_bar(stat = "identity") +
-      scale_fill_manual(values = c("yes" = "red", "no" = "lightblue" ), 
+           aes(x = reorder(Country, -.data[[y_var_name]]), 
+               y = .data[[y_var_name]],
+               fill = if_else(reac$toHighlight, "yes", "no"))) +
+      geom_col() +
+      geom_text(aes(label = round(.data[[y_var_name]] / scaling_factor$num, 2)), 
+                vjust = -0.5) +
+      scale_fill_manual(values = c("yes" = reac$selectedColor, 
+                                   "no" = "lightblue"), 
                         guide = FALSE) +
-      labs(x = "", y = "",  title = paste0("Total ", input$global_mode,
-                                           " (", scaling_factor$text, ")")) +
+      labs(x = "", y = "",  title = paste0("Total ", input$global_indicator,
+                                           scaling_factor$text)) +
       scale_y_continuous(labels = function(x) {x / scaling_factor$num}) +
       custom_theme
   })

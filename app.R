@@ -68,8 +68,7 @@ jhu_filenames <- list.files("./data",
 global_cases <- read_csv("data/JHU_global_cases_2021-02-17.csv",
                          col_types = cols()) %>%
   mutate(Country = factor(Country), Date = as.Date(Date, "%d/%m/%Y")) %>%
-  mutate(Infection_Rate = Deaths / Confirmed,
-         Daily_Infection_Rate = Daily_Deaths / Daily_Confirmed)
+  mutate(Infection_Rate = Deaths / Confirmed)
 
 global_cases <- global_cases %>%
   mutate(Infection_Rate = if_else(is.infinite(Infection_Rate), 1, Infection_Rate))
@@ -242,9 +241,6 @@ server = function(input, output, session) {
       # select new bar
       reac$selectedBar <- new_selected_bar
       reac$toHighlight <- top_countries$Country %in% reac$selectedBar
-      print(top_countries)
-      print(new_selected_bar)
-      print(reac$toHighlight)
       reac$selectedColor <- scales::hue_pal()(input$num_top_countries)[which(reac$toHighlight)]
       
       output$open_panel_btn_spot <- renderUI(
@@ -304,6 +300,15 @@ server = function(input, output, session) {
       scaling_factor$text <- ""
     } else {
       warning("Mode does not have scaling factor for plots.")
+    }
+    
+    if (input$global_indicator == "Infection Rate") {
+      updateSelectInput(session, "lineplot_mode", 
+                        choices = c("Cumulative"))
+    } else {
+      updateSelectInput(session, "lineplot_mode", 
+                        choices = c("Daily", "Cumulative"),
+                        selected = "Cumulative")
     }
   })
   
@@ -421,14 +426,12 @@ server = function(input, output, session) {
       slice_max(order_by = .data[[indicator]], 
                 n = input$num_top_countries)
     
-    y_var_name <- indicator
-    
     ggplot(top_countries_total, 
-           aes(x = reorder(Country, -.data[[y_var_name]]), 
-               y = .data[[y_var_name]],
+           aes(x = reorder(Country, -.data[[indicator]]), 
+               y = .data[[indicator]],
                fill = if_else(reac$toHighlight, "yes", "no"))) +
       geom_col() +
-      geom_text(aes(label = round(.data[[y_var_name]] / scaling_factor$num, 2)), 
+      geom_text(aes(label = round(.data[[indicator]] / scaling_factor$num, 2)), 
                 vjust = -0.5) +
       scale_fill_manual(values = c("yes" = reac$selectedColor, 
                                    "no" = "lightblue"), 

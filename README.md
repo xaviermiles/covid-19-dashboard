@@ -5,7 +5,7 @@ https://xavier-miles.shinyapps.io/covid-19_dashboard/
 "app.R" runs "load data.R" to import the NZ Ministry of Health and John Hopkins University CSV datasets; then runs "ui.R" and "server.R" to construct the dashboard.
 
 Original purpose was to re-create a histogram I saw displaying Covid-19 NZ data (but using R/ggplot2 rather than Tableau) and to learn how to use Shiny dashboards.
-These original histograms are the DHB and Age stratified NZ tabs. Expanded on this to include global data. 
+These original histograms are the DHB and Age stratified NZ tabs. The global tab is to incoporate more data and to create more complicated UI/Shiny logic. 
 
 **Future improvements:**
 - Implement the individual country panels. This will include more detailed information/visuals for the country.

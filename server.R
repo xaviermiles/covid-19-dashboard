@@ -1,5 +1,10 @@
 #' Define the server logic for the dashboard.
 
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+
+
 # Nice theme for ggplots
 custom_theme <- theme(
   panel.grid.major.x = element_blank(),

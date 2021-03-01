@@ -1,5 +1,8 @@
 # Define the UI for the dashboard.
 
+library(shinydashboard)
+
+
 ui <- dashboardPage(
   
   dashboardHeader(
@@ -12,7 +15,7 @@ ui <- dashboardPage(
     sidebarMenu(
       id = "tabs",
       menuItem(
-        "Global", icon = icon("dashboard"), tabName = "globalSuperTab",
+        "Global", icon = icon("dashboard"), tabName = "globalSuperTab"
       ),
       actionLink("remove", "Remove detail tabs"),
       menuItem(

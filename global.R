@@ -1,5 +1,10 @@
 #' Load datasets used in the dashboard.
 
+options(encoding = "UTF-8")
+
+library(tidyverse)
+
+
 ## Importing and tidying NZ data -----------------------------------------------
 # need to search folder for latest non-empty cases CSV
 nz_filenames <- list.files("./data", 

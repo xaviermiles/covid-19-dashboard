@@ -24,12 +24,6 @@ for (dataset in datasets) {
     mutate(Date = as.Date(Date, "%m/%d/%y")) %>%
     rename(Country = `Country/Region`, State = `Province/State`)
   
-  if (dataset == "recovered_global") {
-    # df_long %>% filter(Country == "Canada") %<>%  # NOTE two-way pipe
-    #   mutate(State = "All")
-    (df_long %>% filter(Country == "Canada")) <- mutate(State = "All")
-  }
-  
   df_longs[[dataset]] <- df_long
 }
 
@@ -37,6 +31,9 @@ for (dataset in datasets) {
 #' data are counted for each Canadian province. So create count=NA rows for 
 #' Confirmed & Deaths dataframes where {Country=Canada, State=All} before 
 #' merging.
+df_longs[["recovered_global"]] %>%
+  mutate(State = if_else(Country == "Canada", "All", State))
+
 NA_rows <- df_longs[["confirmed_global"]] %>%
   filter(Country == "Canada" & State == "Alberta") %>%
   select(-count) %>%
@@ -45,19 +42,18 @@ NA_rows <- df_longs[["confirmed_global"]] %>%
 
 # Merge three dataframes
 global <- left_join(df_longs[["confirmed_global"]], df_longs[["deaths_global"]],
-                    by = c("State", "Country", "Lat", "Long", 
-                           "Date")) %>%
+                    by = c("State", "Country", "Lat", "Long", "Date")) %>%
   rename(Confirmed = count.x, Deaths = count.y) %>%
   add_row(NA_rows) %>%
   left_join(., df_longs[["recovered_global"]],
-            by = c("Province", "Country", "Lat", "Long", "Date")) %>%
+            by = c("State", "Country", "Lat", "Long", "Date")) %>%
   rename(Recovered = count)
 
 # Aggregate data into Country/Region-wise (collapsing Province/Region), and 
 # remove Lat & Long. Also removes ship information.
 ship_names <- c("Grand Princess", "Diamond Princess", "MS Zaandam")
 global_country <- global %>%
-  filter(!(Province %in% ship_names | Country %in% ship_names)) %>%
+  filter(!(State %in% ship_names | Country %in% ship_names)) %>%
   group_by(Country, Date) %>%
   summarise_at(c("Confirmed", "Deaths", "Recovered"), ~sum(., na.rm = TRUE))
 

@@ -5,6 +5,7 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 library(shinydashboard)
 library(tidyverse)
 library(magrittr)
+library(lubridate)
 library(r2d3)
 #source("module.R") #for if i decide to modularise into different files
 
@@ -51,8 +52,8 @@ for (filename in nz_filenames) {
   }
 }
 
-ages_order = c("0 to 9", "10 to 19", "20 to 29", "30 to 39", "40 to 49", 
-               "50 to 59", "60 to 69", "70 to 79", "80 to 89", "90+")
+ages_order <- c("0 to 9", "10 to 19", "20 to 29", "30 to 39", "40 to 49", 
+                "50 to 59", "60 to 69", "70 to 79", "80 to 89", "90+")
 
 nz_cases <- raw_nz_cases %>%
   rename_with(~ tolower(gsub(" ", "_", .x, fixed = TRUE))) %>%
@@ -70,8 +71,9 @@ global_cases <- read_csv("data/JHU_global_cases_2021-02-17.csv",
   mutate(Country = factor(Country), Date = as.Date(Date, "%d/%m/%Y")) %>%
   mutate(Infection_Rate = Deaths / Confirmed)
 
+# Infection rates of greater than 1 are not possible, and reflect mis-reporting
 global_cases <- global_cases %>%
-  mutate(Infection_Rate = if_else(is.infinite(Infection_Rate), 1, Infection_Rate))
+  mutate(Infection_Rate = if_else(Infection_Rate > 1, 1, Infection_Rate))
 
 
 ### Define UI ###
@@ -144,7 +146,22 @@ ui = dashboardPage(
                            click = "top_countries_plot_click")
               )
             ),
-            tags$head(tags$style(".small-box{height:75px}"))
+            dateRangeInput("global_dates", "Dates:",
+                           start = min(global_cases$Date),
+                           end = max(global_cases$Date),
+                           min = min(global_cases$Date),
+                           max = max(global_cases$Date),
+                           format = "dd-mm-yyyy",
+                           width = "20%"),
+            fluidRow(
+              tags$table(
+                tags$tr(width = "15%",
+                        tags$td(width = "40%", "Last n months:"),
+                        tags$td(width = "60%", textInput("global_dates_preset", label = NULL, width = "80%")))
+              ),
+              actionButton("global_dates_reset", "Reset"),
+            )
+            #, tags$head(tags$style(".small-box{height:75px}"))
           )
         )
       ),
@@ -285,11 +302,47 @@ server = function(input, output, session) {
     }
   })
   
+  observeEvent(input$global_dates_reset, {
+    updateDateRangeInput(session, "global_dates",
+                         start = min(global_cases$Date),
+                         end = max(global_cases$Date))
+    updateTextInput(session, "global_dates_preset", value = "")
+  })
+  
+  observeEvent(input$global_dates_preset, {
+    tryCatch({
+      int_entry <- as.integer(input$global_dates_preset)
+      
+      if (!is.na(int_entry) && int_entry <= 0) {
+        # Integer is negative, so skip to 'Catch' code
+        warning()
+      }
+      
+      end <- max(global_cases$Date)
+      start <- max(end %m-% months(int_entry), min(global_cases$Date))
+      
+      updateDateRangeInput(session, "global_dates",
+                           start = start,
+                           end = end)
+      # Rounds up in case the entire date range was selected
+      updateTextInput(session, "global_dates_preset", 
+                      value = ceiling(interval(start, end) / months(1)))
+    },
+    warning=function(cond) {
+      updateTextInput(session, "global_dates_preset", value = "")
+    })
+  })
+  
   # Global: Scaling of Axis Labels ---------------------------------------------
   scaling_factor <- reactiveValues(num = 1e6, text = "millions")
   
   observeEvent(input$global_indicator, {
+    # Remove selection
+    reac$toHighlight <- rep(FALSE, 10)
+    reac$selectedBar <- NULL
+    reac$selectedColor <- NULL
     
+    # Change the scaling of the plots
     if (input$global_indicator == "Confirmed") {
       scaling_factor$num <- 1e6
       scaling_factor$text <- " (millions)"
@@ -303,14 +356,18 @@ server = function(input, output, session) {
       warning("Mode does not have scaling factor for plots.")
     }
     
+    # Change the selection of lineplot_mode, if necessary
     if (input$global_indicator == "Infection Rate") {
-      updateSelectInput(session, "lineplot_mode", 
-                        choices = c("Cumulative"))
+      new_selection <- c("Cumulative")
     } else {
-      updateSelectInput(session, "lineplot_mode", 
-                        choices = c("Daily", "Cumulative"),
-                        selected = "Cumulative")
+      new_selection <- c("Daily", "Cumulative")
     }
+    new_selected <- if_else(input$lineplot_mode %in% new_selection,
+                            input$lineplot_mode,
+                            new_selection[1])
+    updateSelectInput(session, "lineplot_mode",
+                      choices = new_selection,
+                      selected = new_selected)
   })
   
   # Global: Summary boxes ------------------------------------------------------
@@ -395,8 +452,11 @@ server = function(input, output, session) {
                 n = input$num_top_countries) %>%
       .$Country
 
+    # Subset by relevant countries and selected date range
     global_subset <- global_cases %>%
-      filter(Country %in% top_countries) %>%
+      filter(input$global_dates[1] < Date,
+             Date < input$global_dates[2],
+             Country %in% top_countries) %>%
       na.omit()
     
     if (input$lineplot_mode == "Daily") {
@@ -405,10 +465,14 @@ server = function(input, output, session) {
       y_var_name <- indicator
     }
     
+    # Prevent plot loading if the y_var_name is not configured correctly
+    req(y_var_name %in% colnames(global_subset))
+    
     suppressWarnings(suppressMessages(
     ggplot(global_subset, aes(Date, .data[[y_var_name]], group = Country)) +
       geom_line(color = reac$selectedColor, size = 2.5) +
-      labs(x = "", y = "", title = paste0("Cumulative ", input$global_indicator, 
+      labs(x = "", y = "", title = paste0(input$lineplot_mode, " ",
+                                          input$global_indicator, 
                                           scaling_factor$text)) +
       scale_x_date(date_labels = "%b-%y", breaks = "1 month") +
       scale_y_continuous(labels = function(x) {x / scaling_factor$num}) +
@@ -437,8 +501,9 @@ server = function(input, output, session) {
       scale_fill_manual(values = c("yes" = reac$selectedColor, 
                                    "no" = "lightblue"), 
                         guide = FALSE) +
-      labs(x = "", y = "",  title = paste0("Total ", input$global_indicator,
-                                           scaling_factor$text)) +
+      labs(x = "", y = "",  
+           title = paste0("Total ", input$global_indicator, scaling_factor$text),
+           caption = "Try clicking on a bar") +
       scale_y_continuous(labels = function(x) {x / scaling_factor$num}) +
       custom_theme
   }, height = 420)

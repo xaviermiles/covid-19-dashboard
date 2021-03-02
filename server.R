@@ -27,7 +27,7 @@ server <- function(input, output, session) {
                          selectedBar = NULL,
                          selectedColor = NULL)
   
-  # a bar is clicked
+  # A bar is selected
   observeEvent(input$top_countries_plot_click, {
     indicator <- gsub(" ", "_", input$global_indicator)
     
@@ -60,7 +60,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # open new panel
+  # Open new panel
   observeEvent(input$open_panel_btn, {
     panel_title <- as.vector(reac$selectedBar)
     
@@ -77,7 +77,7 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "globalTab", selected = panel_title)
   })
   
-  # close all panels
+  # Close all panels
   observeEvent(input$remove, {
     panel_list %>%
       walk(~ removeTab("globalTab", .x))
@@ -85,7 +85,8 @@ server <- function(input, output, session) {
     panel_list <<- NULL
   })
   
-  # Global: Number of Countries Slider -----------------------------------------
+  # Global: Adjustable settings ------------------------------------------------
+  # Number of countries - slider
   observeEvent(input$num_top_countries, {
     if (input$num_top_countries <= length(reac$toHighlight)) {
       reac$toHighlight <- reac$toHighlight[1:input$num_top_countries]
@@ -95,6 +96,16 @@ server <- function(input, output, session) {
     }
   })
   
+  # Dates - range input
+  observeEvent(input$global_dates, {
+    # Prevents user from setting end-date before start-date
+    if (input$global_dates[1] %m+% months(1) > input$global_dates[2]) {
+      updateDateRangeInput(session, "global_dates",
+                           end = input$global_dates[1] %m+% months(1))
+    }
+  })
+  
+  # Dates - reset button
   observeEvent(input$global_dates_reset, {
     updateDateRangeInput(session, "global_dates",
                          start = min(global_cases$Date),
@@ -102,6 +113,7 @@ server <- function(input, output, session) {
     updateTextInput(session, "global_dates_preset", value = "")
   })
   
+  # Dates - display 'previous n months' textbox
   observeEvent(input$global_dates_preset, {
     tryCatch({
       int_entry <- as.integer(input$global_dates_preset)
@@ -126,12 +138,12 @@ server <- function(input, output, session) {
     })
   })
   
-  # Global: Scaling of Axis Labels ---------------------------------------------
+  # Indicator changed
   scaling_factor <- reactiveValues(num = 1e6, text = "millions")
   
   observeEvent(input$global_indicator, {
     # Remove selection
-    reac$toHighlight <- rep(FALSE, 10)
+    reac$toHighlight <- rep(FALSE, input$num_top_countries)
     reac$selectedBar <- NULL
     reac$selectedColor <- NULL
     
@@ -171,7 +183,7 @@ server <- function(input, output, session) {
       sum() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
-      valueBox(subtitle = "Total Confirmed")
+      valueBox(subtitle = tags$p("Total Confirmed", style = "font-size: 90%;"))
   })
   
   output$total_deaths <- renderValueBox({
@@ -181,7 +193,7 @@ server <- function(input, output, session) {
       sum() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
-      valueBox(subtitle = "Total Deaths")
+      valueBox(subtitle = tags$p("Total Deaths", style = "font-size: 90%;"))
   })
   
   ## Global: Sub-Summary Boxes -------------------------------------------------
@@ -192,7 +204,7 @@ server <- function(input, output, session) {
       sum() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
-      valueBox(subtitle = "Daily Confirmed")
+      valueBox(subtitle = tags$p("Daily Confirmed", style = "font-size: 90%;"))
   })
   
   output$rolling_average_confirmed <- renderValueBox({
@@ -207,7 +219,7 @@ server <- function(input, output, session) {
       round() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
-      valueBox(subtitle = "7-day Average Confirmed")
+      valueBox(subtitle = tags$p("7-day Average Confirmed", style = "font-size: 90%;"))
   })
   
   output$daily_deaths <- renderValueBox({
@@ -217,7 +229,7 @@ server <- function(input, output, session) {
       sum() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
-      valueBox(subtitle = "Daily Deaths")
+      valueBox(subtitle = tags$p("Daily Deaths", style = "font-size: 90%;"))
   })
   
   output$rolling_average_deaths <- renderValueBox({
@@ -232,7 +244,7 @@ server <- function(input, output, session) {
       round() %>%
       prettyNum(big.mark = ",") %>%
       tags$p(style = "font-size: 80%;") %>%
-      valueBox(subtitle = "7-day Average Deaths")
+      valueBox(subtitle = tags$p("7-day Average Deaths", style = "font-size: 90%;"))
   })
   
   # Global: Plots --------------------------------------------------------------
@@ -247,8 +259,8 @@ server <- function(input, output, session) {
     
     # Subset by relevant countries and selected date range
     global_subset <- global_cases %>%
-      filter(input$global_dates[1] < Date,
-             Date < input$global_dates[2],
+      filter(input$global_dates[1] <= Date,
+             Date <= input$global_dates[2],
              Country %in% top_countries) %>%
       na.omit()
     
@@ -263,20 +275,23 @@ server <- function(input, output, session) {
     
     suppressWarnings(suppressMessages(
       ggplot(global_subset, aes(Date, .data[[y_var_name]], group = Country)) +
-        geom_line(color = reac$selectedColor, size = 2.5) +
+        geom_line(color = reac$selectedColor, size = 1) +
         labs(x = "", y = "", title = paste0(input$lineplot_mode, " ",
                                             input$global_indicator, 
                                             scaling_factor$text)) +
         scale_x_date(date_labels = "%b-%y", breaks = "1 month") +
         scale_y_continuous(labels = function(x) {x / scaling_factor$num}) +
         gghighlight::gghighlight(Country == reac$selectedBar,
-                                 unhighlighted_params = list(size = 2),
+                                 unhighlighted_params = list(color = "grey55"),
                                  keep_scales = TRUE) +
         custom_theme
     ))
   })
   
   output$top_countries_plot = renderPlot({
+    # Force the plot to load after the 'reac' variable has been updated
+    req(length(reac$toHighlight) == input$num_top_countries)
+    
     indicator <- gsub(" ", "_", input$global_indicator)
     
     top_countries_total <- global_cases %>%

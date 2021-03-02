@@ -59,7 +59,7 @@ ui <- dashboardPage(
                                              "Infection Rate")),
                      width = 2)
             ),
-            fluidRow(),
+            br(),
             fluidRow(
               column(
                 width = 6,
@@ -71,22 +71,36 @@ ui <- dashboardPage(
                            click = "top_countries_plot_click")
               )
             ),
-            dateRangeInput("global_dates", "Dates:",
-                           start = min(global_cases$Date),
-                           end = max(global_cases$Date),
-                           min = min(global_cases$Date),
-                           max = max(global_cases$Date),
-                           format = "dd-mm-yyyy",
-                           width = "20%"),
-            fluidRow(
+            br(), br(),
+            box(width = 3, title = "Dates",
               tags$table(
                 tags$tr(width = "15%",
-                        tags$td(width = "40%", "Last n months:"),
-                        tags$td(width = "60%", textInput("global_dates_preset", label = NULL, width = "80%")))
+                  tags$td(width = "78%",
+                          dateRangeInput("global_dates", NULL,
+                                         start = min(global_cases$Date),
+                                         end = max(global_cases$Date),
+                                         min = min(global_cases$Date),
+                                         max = max(global_cases$Date),
+                                         format = "dd-mm-yyyy",
+                                         weekstart = 1)),
+                  tags$td(width = "2%"),
+                  tags$td(width = "20%", 
+                          "(min 1 month)")
+                )
               ),
-              actionButton("global_dates_reset", "Reset"),
-            )
-            #, tags$head(tags$style(".small-box{height:75px}"))
+              tags$table(
+                tags$tr(width = "15%",
+                        tags$td(width = "25%", 
+                                "Last n months:"),
+                        tags$td(width = "35%", 
+                                textInput("global_dates_preset", label = NULL)),
+                        tags$td(width = "15%"),
+                        tags$td(width = "25%", 
+                                actionButton("global_dates_reset", "Reset"))
+                )
+              )
+            ), 
+            tags$head(tags$style(".small-box{height:75px}"))
           )
         )
       ),

@@ -9,6 +9,7 @@ These original histograms are the DHB and Age stratified NZ tabs. The global tab
 
 **Future improvements:**
 - Implement the individual country panels. This will include more detailed information/visuals for the country.
+- Add option to switch between *gross* vs *per million* cases/deaths for each country.
 - Add 7-day average lineplot mode.
 - Introduce some visualisations that involve maps.
 - Add tables of data to main global panel.
